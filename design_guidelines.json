@@ -1,0 +1,161 @@
+{
+  "project_name": "Avero Hospitality Operating Platform",
+  "theme_defaults": {
+    "default_mode": "light",
+    "supported_modes": ["light", "dark"],
+    "brand_identity": {
+      "name": "AVERO",
+      "logo_description": "Black rounded-square symbol with a lime-green abstract 'A' mark. DO NOT redesign logo.",
+      "tagline": "The All-in-One Hospitality Operating System for Cafes & Restaurants"
+    }
+  },
+  "colors": {
+    "palette_summary": {
+      "primary_lime": "#B8FF00",
+      "black": "#08090C",
+      "white": "#FFFFFF",
+      "light_bg": "#F5F6F7",
+      "dark_gray": "#181A1F"
+    },
+    "hsl_tokens": {
+      "primary": "76 100% 50%",
+      "primary_foreground": "225 33% 4%",
+      "background": "210 14% 96%",
+      "foreground": "225 33% 4%",
+      "card": "0 0% 100%",
+      "card_foreground": "225 33% 4%",
+      "popover": "0 0% 100%",
+      "popover_foreground": "225 33% 4%",
+      "secondary": "220 14% 93%",
+      "secondary_foreground": "225 33% 4%",
+      "muted": "220 13% 91%",
+      "muted_foreground": "220 9% 46%",
+      "accent": "76 100% 50%",
+      "accent_foreground": "225 33% 4%",
+      "destructive": "0 84% 60%",
+      "destructive_foreground": "0 0% 98%",
+      "border": "220 13% 88%",
+      "input": "220 13% 88%",
+      "ring": "76 100% 50%"
+    },
+    "usage_rules": {
+      "primary_lime": "Use for Primary CTA buttons, active sidebar item indicator, key metric highlight cards, table selection active state, primary status badge highlights. NEVER overuse as large flat backgrounds or full page gradients.",
+      "black": "Header backgrounds (dark accents), dark buttons, primary typography in light mode, high contrast borders, structural framing.",
+      "light_bg": "Default background for main workspace, dashboard cards backdrop, panel divider neutral tone.",
+      "dark_gray": "Secondary headers, dark mode card surfaces, code/receipt view blocks, mobile bottom bar."
+    },
+    "workspace_personality_tokens": {
+      "cafe": {
+        "accent_badge_bg": "bg-amber-500/10",
+        "accent_badge_text": "text-amber-800 dark:text-amber-300",
+        "border_subtle": "border-amber-200/60 dark:border-amber-900/40",
+        "highlight_glow": "shadow-[0_2px_12px_rgba(217,119,6,0.08)]",
+        "focus_ring": "ring-amber-500",
+        "signature_style": "Express counter-friendly quick billing view, barista queue timer metrics, warmth-infused warm stone accents over clean lime-black chassis."
+      },
+      "restaurant": {
+        "accent_badge_bg": "bg-emerald-500/10",
+        "accent_badge_text": "text-emerald-800 dark:text-emerald-300",
+        "border_subtle": "border-emerald-200/60 dark:border-emerald-900/40",
+        "highlight_glow": "shadow-[0_2px_12px_rgba(16,185,129,0.08)]",
+        "focus_ring": "ring-emerald-500",
+        "signature_style": "Structured high-density grid, KOT kitchen board column headers, floor plan occupancy map, fine-dining table turnover meters."
+      }
+    }
+  },
+  "typography": {
+    "font_families": {
+      "display": "Plus Jakarta Sans, Satoshi, sans-serif",
+      "heading": "Plus Jakarta Sans, Cabinet Grotesk, sans-serif",
+      "body": "Plus Jakarta Sans, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "rules": {
+      "anti_default": "DO NOT default to raw Inter or Roboto for headers or key metrics. Use Plus Jakarta Sans or Cabinet Grotesk for crisp hospitality authority.",
+      "tight_headers": "Always add tracking-tight to headlines larger than 24px.",
+      "monospaced_numbers": "Use font-mono for all order IDs, prices (₹), receipt totals, kitchen KOT timestamps, table numbers, and stock counts."
+    },
+    "scale": {
+      "h1_hero": "text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight",
+      "h2_section": "text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight",
+      "h3_card_title": "text-lg sm:text-xl font-semibold tracking-normal",
+      "kpi_value": "text-2xl sm:text-3xl lg:text-4xl font-bold font-mono tracking-tight",
+      "body_regular": "text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-300",
+      "caption_mono": "text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400"
+    }
+  },
+  "spacing_and_layout": {
+    "grid_modes": {
+      "marketing_bento": "grid grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-6 lg:gap-8",
+      "dashboard_dense": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6",
+      "kot_board_grid": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4",
+      "tables_floor_grid": "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+    },
+    "padding_rules": {
+      "card_internal": "p-5 sm:p-6",
+      "container_page": "px-4 sm:px-8 lg:px-12 py-6 sm:py-10",
+      "table_cell": "px-4 py-3.5"
+    }
+  },
+  "components": {
+    "kpi_cards": {
+      "style": "bg-white dark:bg-[#181A1F] border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow duration-200",
+      "lime_accent_kpi": "bg-[#08090C] text-white border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden",
+      "lime_glow_badge": "bg-[#B8FF00] text-[#08090C] font-mono text-xs font-bold px-2.5 py-1 rounded-md"
+    },
+    "sidebar_navigation": {
+      "desktop_width": "w-64",
+      "style": "bg-[#08090C] text-slate-300 border-r border-slate-800 flex flex-col justify-between p-4",
+      "active_link": "bg-[#B8FF00] text-[#08090C] font-semibold rounded-lg px-3.5 py-2.5 transition-all flex items-center gap-3 shadow-[0_0_15px_rgba(184,255,0,0.2)]",
+      "inactive_link": "text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-lg px-3.5 py-2.5 transition-all flex items-center gap-3"
+    },
+    "data_tables": {
+      "style": "w-full text-left text-sm border-collapse rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800",
+      "header": "bg-slate-100 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 font-semibold uppercase text-xs tracking-wider border-b border-slate-200 dark:border-slate-800 px-4 py-3",
+      "row": "border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+    },
+    "kot_cards": {
+      "pending_status": "bg-amber-50/80 border-amber-300 dark:bg-amber-950/20 dark:border-amber-700/50",
+      "cooking_status": "bg-blue-50/80 border-blue-300 dark:bg-blue-950/20 dark:border-blue-700/50",
+      "ready_status": "bg-emerald-50/80 border-emerald-300 dark:bg-emerald-950/20 dark:border-emerald-700/50",
+      "header_mono": "font-mono font-bold text-base flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700"
+    },
+    "table_grid_status_cards": {
+      "vacant": "bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800",
+      "occupied": "bg-rose-50 text-rose-900 border-rose-300 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800",
+      "reserved": "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800",
+      "billing": "bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800"
+    },
+    "onboarding_wizard": {
+      "progress_bar": "bg-[#08090C] dark:bg-slate-800 h-2 rounded-full overflow-hidden",
+      "progress_fill": "bg-[#B8FF00] h-full transition-all duration-300",
+      "card": "bg-white dark:bg-[#181A1F] border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-xl max-w-2xl mx-auto"
+    }
+  },
+  "media": {
+    "image_urls": {
+      "cafe_interior_hero": "https://images.unsplash.com/photo-1638882267964-0d9764607947?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBjYWZlJTIwaW50ZXJpb3IlMjBjb2ZmZWUlMjBzaG9wJTIwYmFyaXN0YXxlbnwwfHx8fDE3OTA0OTc5NzF8MA&ixlib=rb-4.1.0&q=85",
+      "cafe_barista_counter": "https://images.unsplash.com/photo-1516197370049-569c4eaba1d6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjYWZlJTIwaW50ZXJpb3IlMjBjb2ZmZWUlMjBzaG9wJTIwYmFyaXN0YXxlbnwwfHx8fDE3OTA0OTc5NzF8MA&ixlib=rb-4.1.0&q=85",
+      "restaurant_kitchen_chef": "https://images.unsplash.com/photo-1768967637650-0662c670f6b6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHw0fHxmaW5lJTIwZGluaW5nJTIwcmVzdGF1cmFudCUyMGludGVyaW9yJTIwY2hlZiUyMGtpdGNoZW58ZW58MHx8fHwxNzkwNDk3OTcxfDA&ixlib=rb-4.1.0&q=85",
+      "restaurant_fine_dining": "https://images.unsplash.com/photo-1758580815174-7304bd3f74c8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwzfHxmaW5lJTIwZGluaW5nJTIwcmVzdGF1cmFudCUyMGludGVyaW9yJTIwY2hlZiUyMGtpdGNoZW58ZW58MHx8fHwxNzkwNDk3OTcxfDA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "testing_attributes": {
+    "mandatory_data_testid_rule": "All interactive elements (buttons, links, inputs, selects, tabs, workspace switcher) and key data cells must include a data-testid attribute in kebab-case.",
+    "examples": [
+      "data-testid=\"workspace-switcher-cafe\"",
+      "data-testid=\"workspace-switcher-restaurant\"",
+      "data-testid=\"pos-quick-add-item-btn\"",
+      "data-testid=\"kot-card-status-toggle\"",
+      "data-testid=\"onboarding-next-step-btn\"",
+      "data-testid=\"kpi-metric-total-revenue\""
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Ensure Default theme is LIGHT mode with an explicit theme toggle switch in header or sidebar.",
+    "Cafe and Restaurant workspaces must display clearly distinguishable layout features and subtle accent badges while sharing the same Avero primary lime #B8FF00 / dark chassis.",
+    "Implement the landing page live countdown timer bar in IST format.",
+    "Use Lucide icons for clean SaaS iconography.",
+    "Do NOT create generic stock layouts — ensure realistic hospitality data (order numbers, dish names, tax GST/FSSAI, table occupancy) is rendered in clean tables and cards."
+  ]
+}
