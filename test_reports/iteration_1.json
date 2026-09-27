@@ -1,0 +1,35 @@
+{
+  "summary": "Comprehensive backend + frontend testing of Avero SaaS. Backend: 16/16 pytest tests passed covering auth (register/login/me/logout, forgot-password identical response, invalid reset token), onboarding (invalid GST rejected, valid GST accepted, persistence), pricing (public + admin), non-admin 403, admin stats, full order->KOT->bill flow for restaurant with server-computed subtotal/tax/total (400/17.5/367.5 verified) and table state transitions (available->occupied->cleaning), cafe orders NOT creating KOT, inventory adjust + transactions log, dashboard (business_type, 7d revenue_series, kot/table status), reports for all 4 ranges, CRUD sanity, and CRITICAL data isolation across customers/menu-items/tables/inventory/orders/kot/payments/expenses (cross-business PUT/DELETE returns 404 and list endpoints strictly scoped). Frontend: Landing countdown visible with launch announcement; signup->onboarding 7 steps (welcome->referral->business-type cafe->subscription->business info->compliance GST/FSSAI->summary->finish) reached dashboard; cafe sidebar excludes KOT nav (0 count) as expected; logout works; re-login of onboarded user goes directly to /app dashboard (onboarding_completed persisted).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/register", "issue": "Emails are lowercased server-side (correct) but not reflected in the OpenAPI/docs; only a test-side annoyance."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Landing header", "issues": ["Announcement pill shows 'TEST_updated announcement' because admin PATCH test updated the announcement. Main agent may want to reset pricing_config.announcement back to production copy after testing."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_avero_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "OPTIONAL: Reset pricing_config announcement back to production text (currently overwritten to 'TEST_updated announcement' by test).",
+    "OPTIONAL: Consider adding a top-level 'new-order-btn' testid on the dashboard (currently only appears in Orders tab). Not a blocker."
+  ],
+  "critical_code_review_comments": [
+    "server.py is a single 740-line file — consider splitting into modules (auth, business, orders, admin, crud_factory) if it grows further.",
+    "get_pricing_config re-inserts default doc if missing but does not upsert-on-miss safely under concurrency; harmless in practice.",
+    "CORS allow_origins uses FRONTEND_URL fallback to http://localhost:3000 — production preview host is in FRONTEND_URL so ok, but consider validating.",
+    "Orders bill endpoint sets kot to 'served' on billing which is fine, but consumer note: KOT PUT status sync map does not include 'accepted' (only preparing/ready/served) — accepted->order status is not synced. Low priority.",
+    "Data isolation is enforced via require_business + business_id filter on every query — verified robust across 8+ resource types."
+  ],
+  "updated_files": ["/app/backend/tests/test_avero_backend.py"],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% of tested critical flows"},
+  "test_credentials": "Admin peanplays.2006@gmail.com / Avero@2026 works. Fresh merchant accounts registered per test.",
+  "seed_data_creation": "Test creates TEST_-prefixed businesses, customers, menu items, tables, inventory, expenses, and one restaurant + one cafe merchant per module. No cleanup performed (test data isolated to test emails).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "backend_test file is at /app/backend/tests/test_avero_backend.py using pytest-xdist. Uses REACT_APP_BACKEND_URL and Authorization Bearer tokens. Reset the pricing_config announcement in DB or via admin API if the landing announcement text needs to be restored. Frontend routes: /signup, /login, /onboarding, /app (dashboard). Cafe sidebar excludes nav-kot; Restaurant sidebar includes nav-kot."
+}

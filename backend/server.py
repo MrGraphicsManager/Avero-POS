@@ -574,8 +574,8 @@ async def update_kot(kot_id: str, payload: dict, biz: dict = Depends(require_bus
         raise HTTPException(status_code=404, detail="KOT not found")
     kot = await db.kot_orders.find_one({"id": kot_id}, {"_id": 0})
     # sync order status
-    if payload.get("status") in ("preparing", "ready", "served"):
-        map_status = {"preparing": "preparing", "ready": "ready", "served": "served"}
+    if payload.get("status") in ("accepted", "preparing", "ready", "served"):
+        map_status = {"accepted": "preparing", "preparing": "preparing", "ready": "ready", "served": "served"}
         await db.orders.update_one({"id": kot["order_id"]},
                                    {"$set": {"status": map_status[payload["status"]], "updated_at": now}})
     return kot
