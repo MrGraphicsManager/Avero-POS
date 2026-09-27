@@ -1,8 +1,12 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
+import { CustomerAuthProvider } from "@/context/CustomerAuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
+import CustomerOrder from "@/pages/customer/CustomerOrder";
+import MyOrders from "@/pages/customer/MyOrders";
+import QROrders from "@/pages/dashboard/QROrders";
 
 import Landing from "@/pages/Landing";
 import Login from "@/pages/auth/Login";
@@ -30,9 +34,12 @@ import Settings from "@/pages/dashboard/Settings";
 function App() {
   return (
     <AuthProvider>
+      <CustomerAuthProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/order/:token" element={<CustomerOrder />} />
+          <Route path="/customer/orders" element={<MyOrders />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -43,6 +50,7 @@ function App() {
           <Route path="/app" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route index element={<Overview />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="qr-orders" element={<QROrders />} />
             <Route path="tables" element={<Tables />} />
             <Route path="menu" element={<Menu />} />
             <Route path="billing" element={<Billing />} />
@@ -60,6 +68,7 @@ function App() {
         </Routes>
         <Toaster position="top-right" richColors />
       </BrowserRouter>
+      </CustomerAuthProvider>
     </AuthProvider>
   );
 }

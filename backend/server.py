@@ -12,9 +12,14 @@ import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+import io
+import hmac
+import qrcode
+import razorpay
 import jwt
 import bcrypt
 import httpx
+from fastapi.responses import StreamingResponse
 from bson import ObjectId
 from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, BackgroundTasks
 from starlette.middleware.cors import CORSMiddleware
@@ -703,6 +708,386 @@ async def reports(range: str = "today", biz: dict = Depends(require_business)):
         "best_selling": best,
     }
 
+# ================================================================ QR ORDERING
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
+def sha(x: str) -> str:
+    return hashlib.sha256(x.encode()).hexdigest()
+
+# ---------------- Customer auth (separate namespace) ----------------
+def create_customer_token(cid: str, email: str) -> str:
+    payload = {"sub": cid, "email": email, "type": "customer",
+               "exp": datetime.now(timezone.utc) + timedelta(days=30)}
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+async def get_current_customer(request: Request) -> dict:
+    token = request.cookies.get("customer_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Customer authentication required")
+    try:
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "customer":
+            raise HTTPException(status_code=401, detail="Not a customer token")
+        cust = await db.customer_accounts.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
+        if not cust:
+            raise HTTPException(status_code=401, detail="Customer not found")
+        return cust
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+class CustomerRegister(BaseModel):
+    name: str
+    email: EmailStr
+    password: str = Field(min_length=6)
+    phone: Optional[str] = None
+
+class CustomerLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+def set_customer_cookie(response: Response, token: str):
+    response.set_cookie("customer_token", token, httponly=True, secure=True, samesite="none", max_age=2592000, path="/")
+
+@api.post("/customer/register")
+async def customer_register(body: CustomerRegister, response: Response):
+    email = body.email.lower()
+    if await db.customer_accounts.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {"id": str(uuid.uuid4()), "name": body.name, "email": email,
+           "password_hash": hash_password(body.password), "phone": body.phone or "",
+           "created_at": now, "updated_at": now}
+    await db.customer_accounts.insert_one(dict(doc))
+    token = create_customer_token(doc["id"], email)
+    set_customer_cookie(response, token)
+    return {"customer": {"id": doc["id"], "name": doc["name"], "email": email, "phone": doc["phone"]}, "token": token}
+
+@api.post("/customer/login")
+async def customer_login(body: CustomerLogin, response: Response):
+    email = body.email.lower()
+    cust = await db.customer_accounts.find_one({"email": email})
+    if not cust or not verify_password(body.password, cust["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_customer_token(cust["id"], email)
+    set_customer_cookie(response, token)
+    return {"customer": {"id": cust["id"], "name": cust["name"], "email": email, "phone": cust.get("phone", "")}, "token": token}
+
+@api.post("/customer/logout")
+async def customer_logout(response: Response):
+    response.delete_cookie("customer_token", path="/")
+    return {"message": "Logged out"}
+
+@api.get("/customer/me")
+async def customer_me(cust: dict = Depends(get_current_customer)):
+    return cust
+
+@api.get("/customer/orders")
+async def customer_orders(cust: dict = Depends(get_current_customer)):
+    orders = await db.orders.find({"customer_account_id": cust["id"], "source": "qr"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    for o in orders:
+        biz = await db.businesses.find_one({"id": o["business_id"]}, {"_id": 0, "business_name": 1})
+        o["business_name"] = biz["business_name"] if biz else "—"
+    return orders
+
+@api.get("/customer/orders/{order_id}")
+async def customer_order_detail(order_id: str, cust: dict = Depends(get_current_customer)):
+    o = await db.orders.find_one({"id": order_id, "customer_account_id": cust["id"]}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="Order not found")
+    biz = await db.businesses.find_one({"id": o["business_id"]}, {"_id": 0, "business_name": 1})
+    o["business_name"] = biz["business_name"] if biz else "—"
+    return o
+
+# ---------------- Merchant: payment settings ----------------
+@api.get("/business/payment-settings")
+async def get_payment_settings(biz: dict = Depends(require_business)):
+    b = await db.businesses.find_one({"id": biz["id"]}, {"_id": 0})
+    kid = b.get("razorpay_key_id") or ""
+    return {"razorpay_key_id": kid, "razorpay_configured": bool(kid and b.get("razorpay_key_secret")),
+            "webhook_configured": bool(b.get("razorpay_webhook_secret")),
+            "webhook_url": f"{FRONTEND_URL}/api/qr/webhook/{biz['id']}",
+            "payment_mode": b.get("payment_mode", "test")}
+
+@api.patch("/business/payment-settings")
+async def set_payment_settings(payload: dict, biz: dict = Depends(require_business)):
+    updates = {}
+    for k in ("razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret"):
+        if k in payload and payload[k] is not None:
+            updates[k] = str(payload[k]).strip()
+    has_keys = bool((updates.get("razorpay_key_id") or biz.get("razorpay_key_id")) and
+                    (updates.get("razorpay_key_secret") or biz.get("razorpay_key_secret")))
+    updates["payment_mode"] = "razorpay" if has_keys else "test"
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.businesses.update_one({"id": biz["id"]}, {"$set": updates})
+    return await get_payment_settings(biz)
+
+def get_rzp_client(biz: dict):
+    kid = biz.get("razorpay_key_id")
+    ksecret = biz.get("razorpay_key_secret")
+    if kid and ksecret:
+        return razorpay.Client(auth=(kid, ksecret))
+    return None
+
+# ---------------- Merchant: Table QR management ----------------
+async def _qr_for_table(business_id: str, table_id: str):
+    return await db.table_qr_codes.find_one({"business_id": business_id, "table_id": table_id}, {"_id": 0})
+
+def _public_qr(qr, table):
+    if not qr:
+        return None
+    return {"table_id": qr["table_id"], "table_number": table.get("number") if table else None,
+            "status": qr["status"], "token": qr.get("token"),
+            "created_at": qr["created_at"], "updated_at": qr["updated_at"],
+            "order_url": f"{FRONTEND_URL}/order/{qr.get('token')}"}
+
+@api.get("/tables/{table_id}/qr")
+async def get_table_qr(table_id: str, biz: dict = Depends(require_business)):
+    table = await db.tables.find_one({"id": table_id, "business_id": biz["id"]}, {"_id": 0})
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    qr = await _qr_for_table(biz["id"], table_id)
+    return _public_qr(qr, table)
+
+@api.post("/tables/{table_id}/qr/generate")
+async def generate_table_qr(table_id: str, biz: dict = Depends(require_business)):
+    table = await db.tables.find_one({"id": table_id, "business_id": biz["id"]}, {"_id": 0})
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    token = secrets.token_urlsafe(24)
+    now = datetime.now(timezone.utc).isoformat()
+    existing = await _qr_for_table(biz["id"], table_id)
+    if existing:
+        await db.table_qr_codes.update_one(
+            {"id": existing["id"]},
+            {"$set": {"token": token, "token_hash": sha(token), "status": "active", "updated_at": now, "revoked_at": None}})
+    else:
+        await db.table_qr_codes.insert_one({
+            "id": str(uuid.uuid4()), "business_id": biz["id"], "table_id": table_id,
+            "token": token, "token_hash": sha(token), "status": "active",
+            "created_at": now, "updated_at": now, "revoked_at": None})
+    qr = await _qr_for_table(biz["id"], table_id)
+    return _public_qr(qr, table)
+
+@api.patch("/tables/{table_id}/qr/status")
+async def toggle_table_qr(table_id: str, payload: dict, biz: dict = Depends(require_business)):
+    status = payload.get("status")
+    if status not in ("active", "disabled"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    now = datetime.now(timezone.utc).isoformat()
+    r = await db.table_qr_codes.update_one(
+        {"business_id": biz["id"], "table_id": table_id},
+        {"$set": {"status": status, "updated_at": now}})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="QR not found")
+    table = await db.tables.find_one({"id": table_id}, {"_id": 0})
+    return _public_qr(await _qr_for_table(biz["id"], table_id), table)
+
+@api.get("/tables/{table_id}/qr/image.png")
+async def table_qr_image(table_id: str, biz: dict = Depends(require_business)):
+    qr = await _qr_for_table(biz["id"], table_id)
+    if not qr:
+        raise HTTPException(status_code=404, detail="Generate a QR first")
+    img = qrcode.make(f"{FRONTEND_URL}/order/{qr['token']}", box_size=12, border=2)
+    buf = io.BytesIO(); img.save(buf, format="PNG"); buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png",
+                             headers={"Content-Disposition": f"inline; filename=avero-table-qr.png"})
+
+# ---------------- Public: resolve token ----------------
+async def resolve_token(token: str):
+    qr = await db.table_qr_codes.find_one({"token_hash": sha(token)}, {"_id": 0})
+    if not qr:
+        raise HTTPException(status_code=404, detail="Invalid QR code")
+    if qr["status"] != "active":
+        raise HTTPException(status_code=403, detail="This table ordering QR is currently unavailable.")
+    biz = await db.businesses.find_one({"id": qr["business_id"]}, {"_id": 0})
+    table = await db.tables.find_one({"id": qr["table_id"]}, {"_id": 0})
+    if not biz or not table:
+        raise HTTPException(status_code=404, detail="Invalid QR code")
+    return qr, biz, table
+
+@api.get("/order/resolve/{token}")
+async def order_resolve(token: str):
+    qr, biz, table = await resolve_token(token)
+    return {"business_name": biz["business_name"], "business_type": biz["business_type"],
+            "table_number": table["number"], "table_id": table["id"],
+            "online_payments": biz.get("payment_mode") == "razorpay"}
+
+@api.get("/order/{token}/menu")
+async def order_menu(token: str, cust: dict = Depends(get_current_customer)):
+    qr, biz, table = await resolve_token(token)
+    cats = await db.menu_categories.find({"business_id": biz["id"]}, {"_id": 0}).to_list(200)
+    items = await db.menu_items.find({"business_id": biz["id"]}, {"_id": 0}).to_list(1000)
+    return {"business_name": biz["business_name"], "business_type": biz["business_type"],
+            "table_number": table["number"], "categories": [c["name"] for c in cats],
+            "items": [i for i in items if i.get("available", True) is not False]}
+
+# ---------------- Customer: checkout & payment ----------------
+def compute_qr_totals(menu_items_by_id, req_items):
+    line = []
+    subtotal = 0.0; tax = 0.0
+    for ri in req_items:
+        mi = menu_items_by_id.get(ri.get("item_id"))
+        if not mi:
+            raise HTTPException(status_code=400, detail="Invalid menu item in cart")
+        qty = max(1, int(ri.get("qty", 1)))
+        price = float(mi.get("price", 0))
+        tr = float(mi.get("tax_rate", 0) or 0)
+        subtotal += price * qty
+        tax += price * qty * tr / 100
+        line.append({"item_id": mi["id"], "name": mi["name"], "price": price, "qty": qty})
+    return line, round(subtotal, 2), round(tax, 2), round(subtotal + tax, 2)
+
+@api.post("/order/{token}/checkout")
+async def order_checkout(token: str, payload: dict, cust: dict = Depends(get_current_customer)):
+    qr, biz, table = await resolve_token(token)
+    req_items = payload.get("items", [])
+    if not req_items:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+    menu = await db.menu_items.find({"business_id": biz["id"]}, {"_id": 0}).to_list(1000)
+    mbyid = {m["id"]: m for m in menu}
+    items, subtotal, tax, total = compute_qr_totals(mbyid, req_items)
+    now = datetime.now(timezone.utc).isoformat()
+
+    # idempotency: reuse an existing awaiting_payment order for this customer+table
+    existing = await db.orders.find_one({
+        "business_id": biz["id"], "table_id": table["id"], "customer_account_id": cust["id"],
+        "source": "qr", "payment_status": {"$in": ["pending", "processing"]}})
+    if existing:
+        await db.orders.update_one({"id": existing["id"]}, {"$set": {
+            "items": items, "subtotal": subtotal, "tax": tax, "total": total, "updated_at": now}})
+        order = await db.orders.find_one({"id": existing["id"]}, {"_id": 0})
+    else:
+        order = {
+            "id": str(uuid.uuid4()), "business_id": biz["id"], "source": "qr",
+            "order_number": await next_order_number(biz["id"]),
+            "order_type": "dine-in", "table_id": table["id"], "table_number": table["number"],
+            "customer_account_id": cust["id"], "customer_name": cust["name"], "customer_email": cust["email"],
+            "items": items, "discount": 0, "tax_rate": 0, "subtotal": subtotal, "tax": tax, "total": total,
+            "status": "awaiting_payment", "payment_status": "pending", "bill_status": "pending",
+            "created_at": now, "updated_at": now}
+        await db.orders.insert_one(dict(order))
+        order.pop("_id", None)
+
+    mode = biz.get("payment_mode", "test")
+    rzp = get_rzp_client(biz)
+    if mode == "razorpay" and rzp:
+        amount_paise = int(round(total * 100))
+        rzp_order = rzp.order.create({"amount": amount_paise, "currency": "INR",
+                                      "payment_capture": 1, "receipt": order["order_number"][:40],
+                                      "notes": {"business_id": biz["id"], "order_id": order["id"]}})
+        await db.orders.update_one({"id": order["id"]}, {"$set": {
+            "razorpay_order_id": rzp_order["id"], "payment_status": "processing", "updated_at": now}})
+        return {"mode": "razorpay", "order_id": order["id"], "order_number": order["order_number"],
+                "razorpay_order_id": rzp_order["id"], "key_id": biz.get("razorpay_key_id"),
+                "amount": amount_paise, "currency": "INR",
+                "customer": {"name": cust["name"], "email": cust["email"], "phone": cust.get("phone", "")},
+                "total": total}
+    # test mode (Razorpay not configured by merchant)
+    return {"mode": "test", "order_id": order["id"], "order_number": order["order_number"],
+            "amount": int(round(total * 100)), "total": total}
+
+async def _confirm_paid(order, payment_id, method="upi"):
+    now = datetime.now(timezone.utc).isoformat()
+    if order.get("payment_status") == "paid":
+        return  # idempotent
+    biz = await db.businesses.find_one({"id": order["business_id"]}, {"_id": 0})
+    await db.orders.update_one({"id": order["id"]}, {"$set": {
+        "payment_status": "paid", "status": "confirmed", "bill_status": "paid",
+        "payment_method": "upi", "razorpay_payment_id": payment_id, "updated_at": now}})
+    # payment record
+    await db.payments.insert_one({
+        "id": str(uuid.uuid4()), "business_id": order["business_id"], "order_id": order["id"],
+        "order_number": order["order_number"], "amount": order["total"], "method": "upi",
+        "status": "paid", "source": "qr", "razorpay_payment_id": payment_id,
+        "customer_name": order.get("customer_name"), "created_at": now})
+    # table occupied
+    if order.get("table_id"):
+        await db.tables.update_one({"id": order["table_id"]},
+                                   {"$set": {"status": "occupied", "updated_at": now}})
+    # KOT after verified payment
+    if not await db.kot_orders.find_one({"order_id": order["id"]}):
+        await db.kot_orders.insert_one({
+            "id": str(uuid.uuid4()), "business_id": order["business_id"], "order_id": order["id"],
+            "order_number": order["order_number"], "table_number": order.get("table_number"),
+            "order_type": order.get("order_type", "dine-in"), "items": order.get("items", []),
+            "notes": "QR ORDER", "source": "qr", "status": "new", "created_at": now, "updated_at": now})
+
+@api.post("/order/{token}/verify")
+async def order_verify(token: str, payload: dict, cust: dict = Depends(get_current_customer)):
+    qr, biz, table = await resolve_token(token)
+    order = await db.orders.find_one({"id": payload.get("order_id"), "customer_account_id": cust["id"]}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.get("payment_status") == "paid":
+        return {"status": "paid", "order_id": order["id"], "order_number": order["order_number"]}
+    rzp = get_rzp_client(biz)
+    if biz.get("payment_mode") == "razorpay" and rzp:
+        params = {"razorpay_order_id": payload.get("razorpay_order_id"),
+                  "razorpay_payment_id": payload.get("razorpay_payment_id"),
+                  "razorpay_signature": payload.get("razorpay_signature")}
+        if not all(params.values()):
+            raise HTTPException(status_code=400, detail="Missing payment parameters")
+        try:
+            rzp.utility.verify_payment_signature(params)
+        except Exception:
+            await db.orders.update_one({"id": order["id"]}, {"$set": {"payment_status": "failed"}})
+            raise HTTPException(status_code=400, detail="Payment verification failed")
+        # verify amount + order match server-side
+        if params["razorpay_order_id"] != order.get("razorpay_order_id"):
+            raise HTTPException(status_code=400, detail="Order mismatch")
+        rzp_order = rzp.order.fetch(params["razorpay_order_id"])
+        if int(rzp_order.get("amount", 0)) != int(round(order["total"] * 100)):
+            raise HTTPException(status_code=400, detail="Amount mismatch")
+        await _confirm_paid(order, params["razorpay_payment_id"])
+        return {"status": "paid", "order_id": order["id"], "order_number": order["order_number"]}
+    # TEST MODE (no real gateway configured) — MOCK confirmation, server-side only
+    await _confirm_paid(order, f"test_{secrets.token_hex(8)}")
+    return {"status": "paid", "mode": "test", "order_id": order["id"], "order_number": order["order_number"]}
+
+@api.get("/order/{token}/status")
+async def order_status(token: str, order_id: str, cust: dict = Depends(get_current_customer)):
+    order = await db.orders.find_one({"id": order_id, "customer_account_id": cust["id"]}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"order_number": order["order_number"], "payment_status": order.get("payment_status"),
+            "status": order.get("status"), "table_number": order.get("table_number"),
+            "items": order.get("items", []), "total": order.get("total")}
+
+# ---------------- Razorpay webhook (merchant-configured) ----------------
+@api.post("/qr/webhook/{business_id}")
+async def qr_webhook(business_id: str, request: Request):
+    biz = await db.businesses.find_one({"id": business_id}, {"_id": 0})
+    if not biz or not biz.get("razorpay_webhook_secret"):
+        raise HTTPException(status_code=404, detail="Webhook not configured")
+    body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    expected = hmac.new(biz["razorpay_webhook_secret"].encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    import json as _json
+    event = _json.loads(body.decode())
+    if event.get("event") in ("payment.captured", "order.paid"):
+        entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+        rzp_order_id = entity.get("order_id")
+        payment_id = entity.get("id")
+        if rzp_order_id:
+            order = await db.orders.find_one({"razorpay_order_id": rzp_order_id, "business_id": business_id}, {"_id": 0})
+            if order:
+                await _confirm_paid(order, payment_id)
+    return {"status": "ok"}
+
+# ---------------- Merchant: QR orders view ----------------
+@api.get("/qr-orders")
+async def qr_orders(biz: dict = Depends(require_business)):
+    return await db.orders.find({"business_id": biz["id"], "source": "qr"}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+
 # ---------------------------------------------------------------- Startup
 @app.on_event("startup")
 async def startup():
@@ -713,6 +1098,9 @@ async def startup():
     await db.login_attempts.create_index("identifier")
     await db.password_reset_requests.create_index("email")
     await db.password_reset_requests.create_index("created_at", expireAfterSeconds=900)
+    await db.customer_accounts.create_index("email", unique=True)
+    await db.table_qr_codes.create_index("token_hash")
+    await db.table_qr_codes.create_index([("business_id", 1), ("table_id", 1)])
     # seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")

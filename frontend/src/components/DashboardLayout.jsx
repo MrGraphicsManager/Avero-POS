@@ -9,7 +9,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   LayoutDashboard, ShoppingBag, Table2, BookOpen, ReceiptText, ChefHat, Boxes,
-  Users, UserCog, Wallet, FileBarChart, LineChart, Settings, LogOut, Menu, MoreHorizontal,
+  Users, UserCog, Wallet, FileBarChart, LineChart, Settings, LogOut, Menu, MoreHorizontal, QrCode,
 } from "lucide-react";
 
 const NAV = {
@@ -21,6 +21,7 @@ const NAV = {
   ],
   restaurantOnly: [{ to: "/app/kot", label: "KOT", icon: ChefHat }],
   rest: [
+    { to: "/app/qr-orders", label: "QR Orders", icon: QrCode },
     { to: "/app/billing", label: "Billing", icon: ReceiptText },
     { to: "/app/inventory", label: "Inventory", icon: Boxes },
     { to: "/app/customers", label: "Customers", icon: Users },

@@ -22,7 +22,27 @@ const Settings = () => {
     manager_name: business?.manager_name || "", gst_number: business?.gst_number || "", fssai_number: business?.fssai_number || "",
   });
   const [saving, setSaving] = useState(false);
+  const [pay, setPay] = useState(null);
+  const [payForm, setPayForm] = useState({ razorpay_key_id: "", razorpay_key_secret: "", razorpay_webhook_secret: "" });
+  const [savingPay, setSavingPay] = useState(false);
   const isResto = business?.business_type === "restaurant";
+
+  React.useEffect(() => {
+    api.get("/business/payment-settings").then((r) => { setPay(r.data); setPayForm((f) => ({ ...f, razorpay_key_id: r.data.razorpay_key_id || "" })); }).catch(() => {});
+  }, []);
+
+  const savePayment = async () => {
+    setSavingPay(true);
+    try {
+      const body = {};
+      Object.entries(payForm).forEach(([k, v]) => { if (v) body[k] = v; });
+      const { data } = await api.patch("/business/payment-settings", body);
+      setPay(data);
+      setPayForm({ razorpay_key_id: data.razorpay_key_id || "", razorpay_key_secret: "", razorpay_webhook_secret: "" });
+      toast.success("Payment settings saved.");
+    } catch { toast.error("Could not save payment settings."); }
+    finally { setSavingPay(false); }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -97,6 +117,22 @@ const Settings = () => {
           </Card>
         </div>
       </div>
+
+      <Card title="Table QR Payments (Razorpay)" className="mt-6">
+        <p className="text-sm text-muted-foreground mb-4">
+          Add your own Razorpay keys to accept live UPI payments on Table QR orders. Until configured, QR orders use a test payment flow.
+          {pay && <span className={`ml-2 font-medium ${pay.razorpay_configured ? "text-emerald-600" : "text-amber-600"}`}>{pay.razorpay_configured ? "● Live Razorpay connected" : "● Test mode"}</span>}
+        </p>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div><Label>Razorpay Key ID</Label><Input className="mt-1.5 font-mono" placeholder="rzp_test_…" value={payForm.razorpay_key_id} onChange={(e) => setPayForm({ ...payForm, razorpay_key_id: e.target.value })} data-testid="rzp-key-id" /></div>
+          <div><Label>Razorpay Key Secret</Label><Input type="password" className="mt-1.5 font-mono" placeholder={pay?.razorpay_configured ? "•••••• (set)" : "secret"} value={payForm.razorpay_key_secret} onChange={(e) => setPayForm({ ...payForm, razorpay_key_secret: e.target.value })} data-testid="rzp-key-secret" /></div>
+          <div><Label>Webhook Secret <span className="text-muted-foreground font-normal">(optional)</span></Label><Input type="password" className="mt-1.5 font-mono" placeholder={pay?.webhook_configured ? "•••••• (set)" : "webhook secret"} value={payForm.razorpay_webhook_secret} onChange={(e) => setPayForm({ ...payForm, razorpay_webhook_secret: e.target.value })} data-testid="rzp-webhook-secret" /></div>
+        </div>
+        {pay?.webhook_url && (
+          <div className="mt-3 text-xs text-muted-foreground">Webhook URL (add in Razorpay dashboard): <code className="bg-slate-100 px-2 py-1 rounded break-all">{pay.webhook_url}</code></div>
+        )}
+        <Button onClick={savePayment} disabled={savingPay} className="mt-4 bg-[#08090C] text-white" data-testid="rzp-save-btn"><Save className="h-4 w-4 mr-1.5" /> {savingPay ? "Saving…" : "Save payment settings"}</Button>
+      </Card>
     </div>
   );
 };
