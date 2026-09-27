@@ -153,7 +153,7 @@ const TableQRDialog = ({ table, onClose }) => {
               <div className="text-lg font-extrabold tracking-tight">Aver<span className="text-[#B8FF00]" style={{ WebkitTextStroke: "0.5px #08090C" }}>o</span></div>
               <div className="text-sm font-bold mt-1">TABLE {table?.number}</div>
               <div className="text-xs text-muted-foreground mb-3">Scan to view menu &amp; order</div>
-              <img src={imgUrl} alt="Table QR" className={`w-44 h-44 bg-white rounded-lg ${qr.status !== "active" ? "opacity-30" : ""}`} data-testid="qr-image" />
+              <img src={imgUrl || undefined} alt="Table QR" className={`w-44 h-44 bg-white rounded-lg ${qr.status !== "active" ? "opacity-30" : ""}`} data-testid="qr-image" />
               <div className="text-xs font-semibold mt-3">Scan • Order • Pay</div>
               <span className="text-[10px] font-bold mt-1.5 bg-[#B8FF00] text-[#08090C] px-2.5 py-0.5 rounded-full">UPI PAYMENT REQUIRED</span>
             </div>

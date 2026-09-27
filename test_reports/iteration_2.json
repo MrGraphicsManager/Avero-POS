@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 2: QR Ordering module tested end-to-end. Backend: 29/29 pytest cases green (test_qr_ordering.py) covering customer auth namespace, JWT-type separation, QR generate/regen/toggle/PNG, public token resolve, availability filtering on menu, server-side amount recomputation (anti-manipulation confirmed - client price=1 ignored, server total=525 as expected), test-mode /verify, idempotency of verify (single payment + single KOT + single paid order), KOT auto-creation with 'QR ORDER' notes only after payment, /qr-orders visibility, business isolation (Merchant B cannot see A's orders or toggle A's QR, token A menu doesn't leak B items), multiple customers on same table -> two separate paid orders, POS regression (non-QR orders excluded from /qr-orders), payment-settings flip test->razorpay when keys set. Frontend (mobile 390px): customer journey PASSED - /order/{token} shows auth gate (no guest), signup, menu loads with business_name + Table 7, add/inc items, sticky Review bar, Review screen with total, Proceed to UPI Payment triggers server-side confirmation, cust-confirmed screen appears, /customer/orders lists the order. Merchant UI (desktop): Tables page shows table-qr-<number> buttons, opens table-qr-dialog with qr-image + Generate/Download/Print/Regenerate/Toggle, sidebar 'QR Orders' link, /app/qr-orders lists the paid QR order, Settings shows Razorpay section (rzp-key-id/secret/save) with 'Test mode' label.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Tables > QR dialog", "issues": ["Minor React warning: empty string passed to <img src> before QR image URL is ready (harmless, causes an extra network fetch). Consider rendering null instead of empty string until imgUrl is resolved in TableQRDialog."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_qr_ordering.py",
+    "/app/test_reports/pytest/qr_results.xml"
+  ],
+  "action_items": [
+    "Optional: In /app/frontend/src/pages/dashboard/Tables.jsx TableQRDialog, guard <img src={imgUrl}> to avoid empty-string src (render null until URL ready) to silence the React warning + prevent redundant network fetch."
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to 1128 lines; QR ordering section is well-organized but the whole file exceeds the 700-line guideline - consider splitting into routers (customer.py, qr.py, orders.py).",
+    "compute_qr_totals correctly recomputes prices server-side from DB (anti-manipulation confirmed by test).",
+    "_confirm_paid is properly idempotent via payment_status=='paid' short-circuit and kot dedup by order_id.",
+    "get_current_customer strictly validates JWT type=='customer'; merchant tokens rejected (verified).",
+    "resolve_token uses SHA-256 token_hash lookup - old token invalidation on regenerate works via token_hash overwrite.",
+    "Customer JWT sets samesite='none', secure=True cookie - good for cross-origin; also accepts Authorization: Bearer header (used by frontend).",
+    "Razorpay live-mode signature path exists but not exercised (no keys available); code path structurally correct (verify_payment_signature + amount+order_id match)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_qr_ordering.py (new)"
+  ],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "100% of exercised flows"},
+  "test_credentials": "Fresh merchant + customer accounts created per test run via /api/auth/register + /api/customer/register. Existing demo merchant demo@avero.com/demo123 not used. Admin peanplays.2006@gmail.com/Avero@2026 untouched.",
+  "seed_data_creation": "Per-run: TEST_QR RestA (restaurant, table '5', menu items Pasta/Salad/Soup), TEST_QR RestB (table '9', BurgerB), and multiple TEST_ prefixed customer accounts. UI test also created TEST_UI Rest (table 7) and TEST_UI M2 (table 11) with paid QR order.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/test_qr_ordering.py -v. All 29 QR tests pass under xdist loadscope (-n 2) because state is shared via module-scoped fixtures (_regen_state, paid_order) that are idempotent per-worker. Base app regression suite /app/backend/tests/test_avero_backend.py (iteration_1) untouched. Customer JWT uses localStorage 'avero_customer_token' and Authorization: Bearer header. Frontend routes: /order/{token} (customer), /customer/orders, /app/qr-orders (merchant). No Razorpay keys configured - payment_mode stays 'test' unless merchant sets both key_id + key_secret via PATCH /api/business/payment-settings."
+}
