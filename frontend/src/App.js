@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import { CustomerAuthProvider } from "@/context/CustomerAuthContext";
+import { BrandingProvider } from "@/context/BrandingContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
 import CustomerOrder from "@/pages/customer/CustomerOrder";
@@ -33,6 +34,7 @@ import Settings from "@/pages/dashboard/Settings";
 
 function App() {
   return (
+    <BrandingProvider>
     <AuthProvider>
       <CustomerAuthProvider>
       <BrowserRouter>
@@ -70,6 +72,7 @@ function App() {
       </BrowserRouter>
       </CustomerAuthProvider>
     </AuthProvider>
+    </BrandingProvider>
   );
 }
 

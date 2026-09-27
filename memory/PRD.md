@@ -30,10 +30,15 @@ Auth, onboarding, dual workspaces (cafe/restaurant), Orders, Tables, Menu, Billi
 - Admin panel: platform stats, referral breakdown, editable pricing/announcement/launch date.
 - Server-side launch offer + automatic pricing switch.
 
+## Added (v1.1 / v1.2)
+- **QR ordering + UPI**: per-table secure QR (revocable), separate customer accounts, server-side amount recompute (anti-manipulation), idempotent payment confirm, KOT-after-payment, merchant QR Orders page. Razorpay per-merchant keys in Settings (TEST mode until keys added). 29/29 backend tests pass.
+- **Admin branding**: admin uploads a logo → replaces logos site-wide + favicon (GET /api/branding, /api/branding/logo; POST/DELETE /api/admin/branding/logo, base64 singleton).
+- **Launch readiness**: CORS reads CORS_ORIGINS (credentials-safe); reports use indexed Mongo date filters; no deployment blockers.
+
 ## Backlog / Remaining
-- **P1**: Google sign-in (user will provide own OAuth keys); Razorpay payment integration for post-launch plans (kept modular).
-- **P2**: Add-ons/variants on menu items; staff granular permission enforcement on backend; per-customer profile drill-down page; CSV export of reports; email receipts.
-- **P2**: Split `server.py` into modules if it grows.
+- **P1**: Google sign-in (user will provide OAuth keys); real Razorpay live verification once a merchant adds keys.
+- **P2**: menu add-ons/variants; split-bill; QR order sound/browser notifications; CSV export; pagination on large lists.
+- **P2**: Split `server.py` into routers if it grows.
 
 ## Test Credentials
 Admin: peanplays.2006@gmail.com / Avero@2026 (→ /admin). Merchants: register fresh via /signup.

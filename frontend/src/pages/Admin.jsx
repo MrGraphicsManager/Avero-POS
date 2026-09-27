@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { useBranding } from "@/context/BrandingContext";
 import api from "@/lib/api";
 import { BrandLogo } from "@/components/Logo";
 import { StatCard, Card } from "@/components/kit";
@@ -9,15 +10,53 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Building2, Coffee, UtensilsCrossed, Users, LogOut, Save } from "lucide-react";
+import { Building2, Coffee, UtensilsCrossed, Users, LogOut, Save, ImageUp, Trash2, Upload } from "lucide-react";
 import { CountdownTimer } from "@/components/CountdownTimer";
 
 const Admin = () => {
   const { user, logout } = useAuth();
+  const { hasCustom, logoUrl, version, reload: reloadBranding } = useBranding();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [cfg, setCfg] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [preview, setPreview] = useState(null); // {dataUrl, base64, type}
+  const fileRef = React.useRef(null);
+
+  const onFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith("image/")) return toast.error("Please choose an image file.");
+    if (f.size > 3 * 1024 * 1024) return toast.error("Image too large (max 3MB).");
+    const reader = new FileReader();
+    reader.onload = () => setPreview({ dataUrl: reader.result, base64: reader.result, type: f.type });
+    reader.readAsDataURL(f);
+  };
+
+  const uploadLogo = async () => {
+    if (!preview) return;
+    setLogoBusy(true);
+    try {
+      await api.post("/admin/branding/logo", { image_base64: preview.base64, content_type: preview.type });
+      await reloadBranding();
+      setPreview(null);
+      if (fileRef.current) fileRef.current.value = "";
+      toast.success("Logo updated across the website.");
+    } catch { toast.error("Could not upload logo."); }
+    finally { setLogoBusy(false); }
+  };
+
+  const resetLogo = async () => {
+    setLogoBusy(true);
+    try {
+      await api.delete("/admin/branding/logo");
+      await reloadBranding();
+      setPreview(null);
+      toast.success("Reverted to the default Avero logo.");
+    } catch { toast.error("Could not reset logo."); }
+    finally { setLogoBusy(false); }
+  };
 
   useEffect(() => {
     api.get("/admin/stats").then((r) => setStats(r.data)).catch(() => setStats(null));
@@ -100,6 +139,49 @@ const Admin = () => {
             </Card>
           )}
         </div>
+
+        <Card title="Website Branding" className="mt-6">
+          <p className="text-sm text-muted-foreground mb-4">Upload your logo to replace it everywhere on the website — landing page, navbar, login, dashboards, mobile nav and favicon. Use a transparent PNG/SVG for best results on dark backgrounds.</p>
+          <div className="grid sm:grid-cols-2 gap-6">
+            <div>
+              <Label className="text-xs">Current logo</Label>
+              <div className="mt-2 flex items-center gap-6 flex-wrap">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center justify-center min-w-[160px] h-20">
+                  <BrandLogo size={32} textClass="text-lg" />
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-[#08090C] p-4 flex items-center justify-center min-w-[160px] h-20">
+                  <BrandLogo size={32} dark textClass="text-lg" />
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">{hasCustom ? "Using a custom uploaded logo." : "Using the default Avero logo."}</div>
+            </div>
+            <div>
+              <Label className="text-xs">Upload new logo</Label>
+              <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" data-testid="logo-file-input" />
+              <div className="mt-2 rounded-xl border-2 border-dashed border-slate-300 p-5 flex flex-col items-center justify-center text-center">
+                {preview ? (
+                  <img src={preview.dataUrl} alt="preview" className="max-h-16 object-contain mb-3" data-testid="logo-preview" />
+                ) : (
+                  <ImageUp className="h-8 w-8 text-slate-400 mb-2" />
+                )}
+                <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="logo-choose-btn">
+                  <Upload className="h-4 w-4 mr-1.5" /> {preview ? "Choose another" : "Choose image"}
+                </Button>
+                <span className="text-[11px] text-muted-foreground mt-2">PNG, SVG, JPG or WEBP · max 3MB</span>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <Button onClick={uploadLogo} disabled={!preview || logoBusy} className="bg-[#08090C] text-white" data-testid="logo-save-btn">
+                  <Save className="h-4 w-4 mr-1.5" /> {logoBusy ? "Saving…" : "Apply logo site-wide"}
+                </Button>
+                {hasCustom && (
+                  <Button variant="outline" onClick={resetLogo} disabled={logoBusy} className="text-rose-600" data-testid="logo-reset-btn">
+                    <Trash2 className="h-4 w-4 mr-1.5" /> Reset to default
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );

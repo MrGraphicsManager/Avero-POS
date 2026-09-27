@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import io
+import base64
 import hmac
 import qrcode
 import razorpay
@@ -681,9 +682,15 @@ async def reports(range: str = "today", biz: dict = Depends(require_business)):
         except Exception:
             return False
 
-    payments = [p for p in await db.payments.find({"business_id": bid}, {"_id": 0}).to_list(9000) if in_range(p.get("created_at", ""))]
-    orders = [o for o in await db.orders.find({"business_id": bid}, {"_id": 0}).to_list(9000) if in_range(o.get("created_at", ""))]
-    expenses = [e for e in await db.expenses.find({"business_id": bid}, {"_id": 0}).to_list(9000) if in_range(e.get("created_at", ""))]
+    if range == "all":
+        cq = {"business_id": bid}
+    elif range == "yesterday":
+        cq = {"business_id": bid, "created_at": {"$gte": start.isoformat(), "$lte": now.isoformat()}}
+    else:
+        cq = {"business_id": bid, "created_at": {"$gte": start.isoformat()}}
+    payments = await db.payments.find(cq, {"_id": 0}).to_list(20000)
+    orders = await db.orders.find(cq, {"_id": 0}).to_list(20000)
+    expenses = await db.expenses.find(cq, {"_id": 0}).to_list(20000)
 
     revenue = round(sum(p["amount"] for p in payments), 2)
     expense_total = round(sum(float(e.get("amount", 0)) for e in expenses), 2)
@@ -1088,6 +1095,63 @@ async def qr_orders(biz: dict = Depends(require_business)):
     return await db.orders.find({"business_id": biz["id"], "source": "qr"}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
+# ================================================================ BRANDING
+class BrandingIn(BaseModel):
+    image_base64: str
+    content_type: Optional[str] = "image/png"
+
+@api.get("/branding")
+async def get_branding():
+    b = await db.branding.find_one({"id": "singleton"}, {"_id": 0})
+    if not b:
+        return {"has_custom_logo": False, "logo_version": 0}
+    return {"has_custom_logo": bool(b.get("logo_data")), "logo_version": b.get("logo_version", 0)}
+
+@api.get("/branding/logo")
+async def branding_logo():
+    b = await db.branding.find_one({"id": "singleton"})
+    if not b or not b.get("logo_data"):
+        raise HTTPException(status_code=404, detail="No custom logo")
+    try:
+        data = base64.b64decode(b["logo_data"])
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invalid logo data")
+    return StreamingResponse(io.BytesIO(data), media_type=b.get("logo_content_type", "image/png"),
+                             headers={"Cache-Control": "public, max-age=30"})
+
+@api.post("/admin/branding/logo")
+async def set_branding(body: BrandingIn, admin: dict = Depends(require_admin)):
+    raw = body.image_base64 or ""
+    ctype = body.content_type or "image/png"
+    if raw.strip().startswith("data:") and "," in raw:
+        header, raw = raw.split(",", 1)
+        if ";" in header and ":" in header:
+            ctype = header.split(":", 1)[1].split(";", 1)[0] or ctype
+    raw = raw.strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="No image provided")
+    if len(raw) > 4_000_000:
+        raise HTTPException(status_code=400, detail="Image too large (max ~3MB)")
+    try:
+        base64.b64decode(raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image encoding")
+    now = datetime.now(timezone.utc).isoformat()
+    existing = await db.branding.find_one({"id": "singleton"})
+    ver = (existing.get("logo_version", 0) if existing else 0) + 1
+    await db.branding.update_one({"id": "singleton"}, {"$set": {
+        "id": "singleton", "logo_data": raw, "logo_content_type": ctype,
+        "logo_version": ver, "updated_at": now}}, upsert=True)
+    return {"has_custom_logo": True, "logo_version": ver}
+
+@api.delete("/admin/branding/logo")
+async def reset_branding(admin: dict = Depends(require_admin)):
+    existing = await db.branding.find_one({"id": "singleton"})
+    ver = (existing.get("logo_version", 0) if existing else 0) + 1
+    await db.branding.update_one({"id": "singleton"},
+                                 {"$set": {"logo_data": None, "logo_version": ver}}, upsert=True)
+    return {"has_custom_logo": False, "logo_version": ver}
+
 # ---------------------------------------------------------------- Startup
 @app.on_event("startup")
 async def startup():
@@ -1101,6 +1165,8 @@ async def startup():
     await db.customer_accounts.create_index("email", unique=True)
     await db.table_qr_codes.create_index("token_hash")
     await db.table_qr_codes.create_index([("business_id", 1), ("table_id", 1)])
+    for _c in ("orders", "payments", "expenses"):
+        await db[_c].create_index([("business_id", 1), ("created_at", -1)])
     # seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -1119,9 +1185,14 @@ async def root():
     return {"message": "Avero API", "launch_active": launch_active_now()}
 
 app.include_router(api)
-app.add_middleware(CORSMiddleware, allow_credentials=True,
-                   allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000"), "http://localhost:3000"],
-                   allow_methods=["*"], allow_headers=["*"])
+_cors = os.environ.get("CORS_ORIGINS", "*").strip()
+if _cors == "*":
+    app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origin_regex=".*",
+                       allow_methods=["*"], allow_headers=["*"])
+else:
+    app.add_middleware(CORSMiddleware, allow_credentials=True,
+                       allow_origins=[o.strip() for o in _cors.split(",") if o.strip()],
+                       allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("shutdown")
 async def shutdown():
