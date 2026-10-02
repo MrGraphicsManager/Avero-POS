@@ -6,7 +6,8 @@ import {
   Code2, Settings2, Send, Mail, Phone, Cpu, Store, UtensilsCrossed,
 } from "lucide-react";
 
-const CONTACT_EMAIL = "hello@avero.live";
+const CONTACT_EMAIL = "priyennaik@gmail.com";
+const WHATSAPP_NUMBER = "917016430577";
 
 const FEATURES = [
   {
@@ -314,7 +315,7 @@ const Landing = () => {
                 </a>
                 <div className="flex items-center gap-3 text-slate-500">
                   <span className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center"><Phone className="h-4 w-4" /></span>
-                  Contact details can be provided directly with your enquiry.
+                  WhatsApp only — no direct calls.
                 </div>
               </div>
             </div>
