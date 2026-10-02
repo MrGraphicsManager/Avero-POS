@@ -27,7 +27,6 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from html import escape
-from urllib.parse import urlparse
 
 # ---------------------------------------------------------------- Setup
 mongo_url = os.environ['MONGO_URL']
@@ -119,18 +118,15 @@ async def require_business(user: dict = Depends(get_current_user)) -> dict:
     return biz
 
 # ---------------------------------------------------------------- Email
-EMAIL_BASE_URL = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip().rstrip("/") or "https://integrations.emergentagent.com"
-EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "").strip()
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME") or "Avero"
 
 async def send_password_reset_email(to_email: str, token: str) -> bool:
     base = os.environ.get("FRONTEND_URL", "").rstrip("/")
     link = f"{base}/reset-password?token={token}"
-    if not EMAIL_KEY or EMAIL_KEY.startswith("{") or not base.startswith("https://"):
-        if urlparse(base).hostname in ("localhost", "127.0.0.1", "::1"):
-            logger.warning("Email not configured; password reset link: %s", link)
-        else:
-            logger.error("Password reset email not configured (EMERGENT_EMAIL_KEY / FRONTEND_URL)")
+    if not RESEND_API_KEY or not EMAIL_FROM or not base.startswith("https://"):
+        logger.error("Password reset email not configured (RESEND_API_KEY / EMAIL_FROM / FRONTEND_URL)")
         return False
     brand = escape(EMAIL_FROM_NAME)
     html = (
@@ -143,10 +139,16 @@ async def send_password_reset_email(to_email: str, token: str) -> bool:
     )
     try:
         async with httpx.AsyncClient(timeout=30) as c:
-            resp = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
-                                headers={"X-Email-Key": EMAIL_KEY},
-                                json={"to": [to_email], "subject": f"Reset your {EMAIL_FROM_NAME} password",
-                                      "html": html, "from_name": EMAIL_FROM_NAME})
+            resp = await c.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "from": f"{EMAIL_FROM_NAME} <{EMAIL_FROM}>",
+                    "to": [to_email],
+                    "subject": f"Reset your {EMAIL_FROM_NAME} password",
+                    "html": html,
+                },
+            )
         resp.raise_for_status()
         return True
     except Exception as e:
